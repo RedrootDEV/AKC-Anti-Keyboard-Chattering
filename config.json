@@ -1,0 +1,11 @@
+{
+  "defaultThreshold": 50,
+  "debugMode": true,
+  "keyThresholds": {
+    "VK_NUMPAD3": 100
+  },
+  "pauseProcesses": [
+    "Fortnite.exe",
+    "VALORANT.exe"
+  ]
+}
