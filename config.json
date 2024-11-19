@@ -7,5 +7,6 @@
   "pauseProcesses": [
     "Fortnite.exe",
     "VALORANT.exe"
-  ]
+  ],
+  "monitorInterval": 5000
 }

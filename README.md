@@ -61,9 +61,10 @@ AKC uses a `config.json` file for configuration. Here's an example configuration
     "VK_NUMPAD3": 100
   },
   "pauseProcesses": [
-    "VALORANT.exe",
-    "Fortnite.exe"
-  ]
+    "Fortnite.exe",
+    "VALORANT.exe"
+  ],
+  "monitorInterval": 5000
 }
 ```
 
@@ -73,6 +74,7 @@ AKC uses a `config.json` file for configuration. Here's an example configuration
 - **debugMode**: If `true`, detailed debug information will be logged.
 - **keyThresholds**: A dictionary of custom debounce thresholds for specific keys. Use key names like `"VK_NUMPAD3"`, `"VK_A"`, etc.
 - **pauseProcesses**: A list of processes that will trigger the application to pause if they are running. If one of the listed processes is active, the application will pause.
+- **monitorInterval**: The interval (in milliseconds) at which the application checks for running processes that may trigger the pause mode. If one of the processes listed in pauseProcesses is found to be active, the application will pause. This interval determines how frequently the check is performed.
 
 > **Note**: The **process-pause feature** is particularly useful for online games, such as **VALORANT** or **Fortnite**, where anti-cheat systems may mistakenly flag AKC as suspicious behavior. Pausing the application while these processes are running ensures that the anti-cheat systems do not interfere.
 

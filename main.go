@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/moutend/go-hook/pkg/keyboard"
 	"github.com/moutend/go-hook/pkg/types"
 	"github.com/moutend/go-hook/pkg/win32"
@@ -22,6 +23,7 @@ type Config struct {
 	DebugMode        bool              `json:"debugMode"`
 	KeyThresholds    map[string]int    `json:"keyThresholds"`
 	PauseProcesses   []string          `json:"pauseProcesses"`
+	MonitorInterval  int               `json:"monitorInterval"`
 }
 
 var config Config
@@ -130,7 +132,7 @@ func handler(chan<- types.KeyboardEvent) types.HOOKPROC {
 
 		switch message {
 		case 256, 260: // KEYDOWN or SYSKEYDOWN
-			threshold := getThreshold(key.VKCode)
+			threshold := getThreshold(fmt.Sprintf("%v", key.VKCode))
 
 			lastUpTime, upExists := keyTimes.lastKeyUp[key.VKCode]
 			if upExists && now.Sub(lastUpTime) < threshold {
@@ -152,23 +154,11 @@ func handler(chan<- types.KeyboardEvent) types.HOOKPROC {
 }
 
 // Gets the debounce time for a specific key
-func getThreshold(vkCode types.VKCode) time.Duration {
-	keyName := vkToString(vkCode)
-	if threshold, ok := config.KeyThresholds[keyName]; ok {
+func getThreshold(vkCode string) time.Duration {
+	if threshold, ok := config.KeyThresholds[vkCode]; ok {
 		return time.Duration(threshold) * time.Millisecond
 	}
 	return time.Duration(config.DefaultThreshold) * time.Millisecond
-}
-
-// Converts VKCode to its name (e.g., "VK_NUMPAD3")
-func vkToString(vkCode types.VKCode) string {
-	switch vkCode {
-	case 99:
-		return "VK_NUMPAD3"
-	// Add more cases as needed
-	default:
-		return "UNKNOWN"
-	}
 }
 
 // Loads configuration from a JSON file
@@ -216,7 +206,8 @@ func monitorProcesses() {
 		}
 
 		lastPausedState = paused
-		time.Sleep(5 * time.Second) // Monitor every 5 seconds
+
+		time.Sleep(time.Duration(config.MonitorInterval) * time.Millisecond)
 	}
 }
 
