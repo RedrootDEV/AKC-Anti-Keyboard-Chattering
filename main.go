@@ -1,3 +1,5 @@
+//go:generate goversioninfo
+
 package main
 
 import (
@@ -38,6 +40,10 @@ var keyTimes = struct {
 	lastKeyDown: make(map[types.VKCode]time.Time),
 }
 
+// Global keyboard channel and hook
+var keyboardChan chan types.KeyboardEvent
+var hookInstalled bool
+
 func main() {
 	// Redirect logs to a .txt file
 	logFile, err := os.OpenFile("app_log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
@@ -57,19 +63,20 @@ func main() {
 	// Start monitoring processes
 	go monitorProcesses()
 
+	// Initialize keyboard channel
+	keyboardChan = make(chan types.KeyboardEvent, 100)
+
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func run() error {
-	keyboardChan := make(chan types.KeyboardEvent, 100)
-
 	// Install the keyboard hook
-	if err := keyboard.Install(handler, keyboardChan); err != nil {
+	if err := installKeyboardHook(); err != nil {
 		return err
 	}
-	defer keyboard.Uninstall()
+	defer uninstallKeyboardHook()
 
 	// Capture interrupt signals (Ctrl+C)
 	signalChan := make(chan os.Signal, 1)
@@ -78,6 +85,25 @@ func run() error {
 	log.Println("Keyboard chatter mitigation active. Press Ctrl+C to exit.")
 	<-signalChan // Wait for an interrupt signal
 	return nil
+}
+
+func installKeyboardHook() error {
+	// Install the keyboard hook only if it's not already installed
+	if !hookInstalled {
+		if err := keyboard.Install(handler, keyboardChan); err != nil {
+			return err
+		}
+		hookInstalled = true
+	}
+	return nil
+}
+
+func uninstallKeyboardHook() {
+	// Uninstall the keyboard hook only if it's installed
+	if hookInstalled {
+		keyboard.Uninstall()
+		hookInstalled = false
+	}
 }
 
 func handler(chan<- types.KeyboardEvent) types.HOOKPROC {
@@ -180,16 +206,16 @@ func monitorProcesses() {
 		paused = shouldPause
 		pausedMutex.Unlock()
 
-		// Only log when the pause state changes
-		if config.DebugMode && lastPausedState != paused {
-			if paused {
-				log.Printf("Pausing application due to active process: %s", pausedProcess)
-			} else {
-				log.Println("Application running normally.")
-			}
-			lastPausedState = paused
+		// Handle pause logic
+		if paused && !lastPausedState {
+			log.Printf("Pausing application due to active process: %s", pausedProcess)
+			uninstallKeyboardHook() // Uninstall hook when paused
+		} else if !paused && lastPausedState {
+			log.Println("Application running normally.")
+			installKeyboardHook() // Reinstall hook when resumed
 		}
 
+		lastPausedState = paused
 		time.Sleep(5 * time.Second) // Monitor every 5 seconds
 	}
 }
