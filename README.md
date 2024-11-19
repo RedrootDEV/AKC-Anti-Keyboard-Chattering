@@ -1,7 +1,7 @@
 
 # AKC (Anti Keyboard Chattering)
 
-AKC is a lightweight tool designed to prevent keyboard chatter (repeated key presses) by implementing a key debounce mechanism. It monitors keyboard input and blocks repetitive keystrokes that occur too quickly after a previous key release, which can be caused by noisy or faulty keyboards. It also has the ability to pause the application if specific processes are detected running in the bAKCground.
+AKC is a lightweight tool designed to prevent keyboard chatter (repeated key presses) by implementing a key debounce mechanism. It monitors keyboard input and blocks repetitive keystrokes that occur too quickly after a previous key release, which can be caused by noisy or faulty keyboards. It also has the ability to pause the application if specific processes are detected running in the background.
 
 ## Features
 
