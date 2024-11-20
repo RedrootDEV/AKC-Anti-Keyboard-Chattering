@@ -50,7 +50,7 @@ func main() {
 	// Redirect logs to a .txt file
 	logFile, err := os.OpenFile("app_log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatal("Error opening log file: ", err)
+		log.Fatalf("Error opening log file: ", err)
 	}
 	defer logFile.Close()
 
@@ -59,7 +59,7 @@ func main() {
 
 	// Load configuration from config.json
 	if err := loadConfig("config.json"); err != nil {
-		log.Fatal(err)
+		log.Fatalf(err)
 	}
 
 	// Start monitoring processes
@@ -90,7 +90,7 @@ func main() {
 
 	// Run the main functionality
 	if err := run(); err != nil {
-		log.Fatal(err)
+		log.Fatalf(err)
 	}
 }
 
@@ -197,75 +197,60 @@ func loadConfig(path string) error {
 
 // Monitors running processes and pauses the application if necessary
 func monitorProcesses() {
-	var lastPausedState bool
+    var lastPausedState bool
 
-	for {
-		activeProcesses := getActiveProcesses()
+    for {
+        pausedProcess, shouldPause := getActiveProcesses()
 
-		shouldPause := false
-		var pausedProcess string
+        pausedMutex.Lock()
+        paused = shouldPause
+        pausedMutex.Unlock()
 
-		for _, proc := range config.PauseProcesses {
-			if _, exists := activeProcesses[proc]; exists {
-				shouldPause = true
-				pausedProcess = proc
-				break
-			}
-		}
-
-		pausedMutex.Lock()
-		paused = shouldPause
-		pausedMutex.Unlock()
-
-		if paused && !lastPausedState {
+        if paused && !lastPausedState {
             if config.DebugMode {
                 log.Printf("Pausing application due to active process: %s", pausedProcess)
             }
-			uninstallKeyboardHook()
-		} else if !paused && lastPausedState {
+            uninstallKeyboardHook()
+        } else if !paused && lastPausedState {
             if config.DebugMode {
                 log.Println("Application running normally.")
             }
-			installKeyboardHook()
-		}
+            installKeyboardHook()
+        }
 
-		lastPausedState = paused
-
-		time.Sleep(time.Duration(config.MonitorInterval) * time.Millisecond)
-	}
+        lastPausedState = paused
+        time.Sleep(time.Duration(config.MonitorInterval) * time.Millisecond)
+    }
 }
 
 // Gets a list of active processes on the system
-func getActiveProcesses() map[string]struct{} {
-	procs := make(map[string]struct{})
-	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
-	if err != nil {
-		log.Fatal("Error creating snapshot of processes: %v", err)
-		return procs
-	}
-	defer windows.CloseHandle(snapshot)
+func getActiveProcesses() (string, bool) {
+    snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+    if err != nil {
+        log.Fatalf("Error creating snapshot of processes: %v", err)
+        return "", false
+    }
+    defer windows.CloseHandle(snapshot)
 
-	var entry windows.ProcessEntry32
-	entry.Size = uint32(unsafe.Sizeof(entry))
+    var entry windows.ProcessEntry32
+    entry.Size = uint32(unsafe.Sizeof(entry))
 
-	if err := windows.Process32First(snapshot, &entry); err != nil {
-		log.Fatal("Error getting first process: %v", err)
-		return procs
-	}
+    if err := windows.Process32First(snapshot, &entry); err != nil {
+        log.Fatalf("Error getting first process: %v", err)
+        return "", false
+    }
 
-	for {
-		name := windows.UTF16ToString(entry.ExeFile[:])
-		procs[name] = struct{}{}
-		for _, proc := range config.PauseProcesses {
-			if name == proc {
-				return procs
-			}
-		}
+    for {
+        name := windows.UTF16ToString(entry.ExeFile[:])
+        for _, proc := range config.PauseProcesses {
+            if name == proc {
+                return name, true
+            }
+        }
+        if err := windows.Process32Next(snapshot, &entry); err != nil {
+            break
+        }
+    }
 
-		if err := windows.Process32Next(snapshot, &entry); err != nil {
-			break
-		}
-	}
-
-	return procs
+    return "", false
 }
