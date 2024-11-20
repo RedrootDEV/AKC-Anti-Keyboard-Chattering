@@ -55,7 +55,7 @@ func main() {
 	defer logFile.Close()
 
 	log.SetFlags(log.Ldate | log.Ltime) // Add date and time to logs
-	log.SetOutput(logFile) // Redirect logs to the file
+	log.SetOutput(logFile)              // Redirect logs to the file
 
 	// Load configuration from config.json
 	if err := loadConfig("config.json"); err != nil {
@@ -65,9 +65,30 @@ func main() {
 	// Start monitoring processes
 	go monitorProcesses()
 
+	// Start periodic cleanup for unused keys
+    go func() {
+        ticker := time.NewTicker(30 * time.Minute) // Clean every 30 minutes
+        defer ticker.Stop()
+
+        for {
+            select {
+            case <-ticker.C:
+                keyTimes.Lock()
+                for key, lastUpTime := range keyTimes.lastKeyUp {
+                    if time.Since(lastUpTime) > 2*time.Hour { // Delete unused keys in 2 hours
+                        delete(keyTimes.lastKeyUp, key)
+                        delete(keyTimes.lastKeyDown, key)
+                    }
+                }
+                keyTimes.Unlock()
+            }
+        }
+    }()
+
 	// Initialize keyboard channel
 	keyboardChan = make(chan types.KeyboardEvent, 100)
 
+	// Run the main functionality
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}

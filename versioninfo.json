@@ -3,13 +3,13 @@
         "FileVersion": {
             "Major": 1,
             "Minor": 1,
-            "Patch": 6,
+            "Patch": 7,
             "Build": 0
         },
         "ProductVersion": {
             "Major": 1,
             "Minor": 1,
-            "Patch": 6,
+            "Patch": 7,
             "Build": 0
         },
         "FileFlagsMask": "3f",
@@ -22,14 +22,14 @@
         "Comments": "Anti Keyboard Chattering",
         "CompanyName": "https://github.com/RedrootDEV/AKC-Anti-Keyboard-Chattering",
         "FileDescription": "Anti Keyboard Chattering",
-        "FileVersion": "1.1.6.0",
+        "FileVersion": "1.1.7.0",
         "InternalName": "AKC",
         "LegalCopyright": "© 2024 RedrootDEV",
         "LegalTrademarks": "",
         "OriginalFilename": "AKC.exe",
         "PrivateBuild": "",
         "ProductName": "AKC Anti Keyboard Chatter",
-        "ProductVersion": "1.1.6.0",
+        "ProductVersion": "1.1.7.0",
         "SpecialBuild": ""
     },
     "VarFileInfo": {

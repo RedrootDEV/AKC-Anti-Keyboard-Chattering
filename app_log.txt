@@ -1,0 +1,17 @@
+2024/11/19 16:37:20 Keyboard chatter mitigation active. Press Ctrl+C to exit.
+2024/11/19 16:37:59 Blocked chatter for key: VK_BACK (VKCode: 8)
+2024/11/19 16:37:59 Blocked chatter for key: VK_BACK (VKCode: 8)
+2024/11/19 16:38:00 Blocked chatter for key: VK_BACK (VKCode: 8)
+2024/11/19 16:38:17 Blocked chatter for key: VK_1 (VKCode: 49)
+2024/11/19 16:40:00 Blocked chatter for key: VK_OEM_COMMA (VKCode: 188)
+2024/11/19 23:56:05 Keyboard chatter mitigation active. Press Ctrl+C to exit.
+2024/11/19 23:56:14 Blocked chatter for key: VK_NUMPAD3 (VKCode: 99)
+2024/11/19 23:56:15 Blocked chatter for key: VK_NUMPAD3 (VKCode: 99)
+2024/11/19 23:56:15 Blocked chatter for key: VK_NUMPAD3 (VKCode: 99)
+2024/11/19 23:56:15 Blocked chatter for key: VK_NUMPAD3 (VKCode: 99)
+2024/11/19 23:56:15 Blocked chatter for key: VK_NUMPAD3 (VKCode: 99)
+2024/11/19 23:57:02 Blocked chatter for key: VK_NUMPAD3 (VKCode: 99)
+2024/11/19 23:57:02 Blocked chatter for key: VK_NUMPAD3 (VKCode: 99)
+2024/11/19 23:57:04 Blocked chatter for key: VK_I (VKCode: 73)
+2024/11/19 23:57:05 Blocked chatter for key: VK_I (VKCode: 73)
+2024/11/20 00:02:01 Blocked chatter for key: VK_RETURN (VKCode: 13)
