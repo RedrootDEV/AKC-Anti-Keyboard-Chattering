@@ -75,7 +75,7 @@ func main() {
             case <-ticker.C:
                 keyTimes.Lock()
                 for key, lastUpTime := range keyTimes.lastKeyUp {
-                    if time.Since(lastUpTime) > 2*time.Hour { // Delete unused keys in 2 hours
+                    if time.Since(lastUpTime) > 30*time.Minute { // Delete unused keys in 30 minutes
                         delete(keyTimes.lastKeyUp, key)
                         delete(keyTimes.lastKeyDown, key)
                     }
@@ -104,8 +104,9 @@ func run() error {
 	// Capture interrupt signals (Ctrl+C)
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
-
-	log.Println("Keyboard chatter mitigation active. Press Ctrl+C to exit.")
+    if config.DebugMode {
+        log.Println("Keyboard chatter mitigation active. Press Ctrl+C to exit.")
+    }
 	<-signalChan // Wait for an interrupt signal
 	return nil
 }
@@ -204,7 +205,6 @@ func monitorProcesses() {
 		shouldPause := false
 		var pausedProcess string
 
-		// Check if any of the processes to pause are active
 		for _, proc := range config.PauseProcesses {
 			if _, exists := activeProcesses[proc]; exists {
 				shouldPause = true
@@ -217,13 +217,16 @@ func monitorProcesses() {
 		paused = shouldPause
 		pausedMutex.Unlock()
 
-		// Handle pause logic
 		if paused && !lastPausedState {
-			log.Printf("Pausing application due to active process: %s", pausedProcess)
-			uninstallKeyboardHook() // Uninstall hook when paused
+            if config.DebugMode {
+                log.Printf("Pausing application due to active process: %s", pausedProcess)
+            }
+			uninstallKeyboardHook()
 		} else if !paused && lastPausedState {
-			log.Println("Application running normally.")
-			installKeyboardHook() // Reinstall hook when resumed
+            if config.DebugMode {
+                log.Println("Application running normally.")
+            }
+			installKeyboardHook()
 		}
 
 		lastPausedState = paused
@@ -237,6 +240,7 @@ func getActiveProcesses() map[string]struct{} {
 	procs := make(map[string]struct{})
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
+		log.Fatal("Error creating snapshot of processes: %v", err)
 		return procs
 	}
 	defer windows.CloseHandle(snapshot)
@@ -245,12 +249,18 @@ func getActiveProcesses() map[string]struct{} {
 	entry.Size = uint32(unsafe.Sizeof(entry))
 
 	if err := windows.Process32First(snapshot, &entry); err != nil {
+		log.Fatal("Error getting first process: %v", err)
 		return procs
 	}
 
 	for {
 		name := windows.UTF16ToString(entry.ExeFile[:])
 		procs[name] = struct{}{}
+		for _, proc := range config.PauseProcesses {
+			if name == proc {
+				return procs
+			}
+		}
 
 		if err := windows.Process32Next(snapshot, &entry); err != nil {
 			break
