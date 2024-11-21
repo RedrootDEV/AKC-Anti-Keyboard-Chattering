@@ -10,7 +10,8 @@ import (
 	"github.com/moutend/go-hook/pkg/win32"
 	"log"
 	"os"
-	"os/signal"
+    "io"
+    "context"
 	"sync"
 	"time"
 	"unsafe"
@@ -47,68 +48,96 @@ var keyboardChan chan types.KeyboardEvent
 var hookInstalled bool
 
 func main() {
-	// Redirect logs to a .txt file
-	logFile, err := os.OpenFile("app_log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("Error opening log file: ", err)
-	}
-	defer logFile.Close()
+    // Create a context with cancellation
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel() // Ensure resources are released
 
-	log.SetFlags(log.Ldate | log.Ltime) // Add date and time to logs
-	log.SetOutput(logFile)              // Redirect logs to the file
+    // Load configuration from config.json (mover esto antes de configureLogging)
+    if err := loadConfig("config.json"); err != nil {
+        log.Fatal(err)
+    }
 
-	// Load configuration from config.json
-	if err := loadConfig("config.json"); err != nil {
-		log.Fatal(err)
-	}
+    // Redirect logs to a .txt file only if DebugMode is enabled
+    if err := configureLogging(); err != nil {
+        log.Fatalf("Error configuring logging: %v", err)
+    }
 
-	// Start monitoring processes
-	go monitorProcesses()
+    // Start monitoring processes
+    go monitorProcesses()
 
-	// Start periodic cleanup for unused keys
-    go func() {
-        ticker := time.NewTicker(30 * time.Minute) // Clean every 30 minutes
-        defer ticker.Stop()
+    // Start periodic cleanup using the context
+    go periodicCleanup(ctx)
 
-        for {
-            select {
-            case <-ticker.C:
-                keyTimes.Lock()
-                for key, lastUpTime := range keyTimes.lastKeyUp {
-                    if time.Since(lastUpTime) > 30*time.Minute { // Delete unused keys in 30 minutes
-                        delete(keyTimes.lastKeyUp, key)
-                        delete(keyTimes.lastKeyDown, key)
-                    }
-                }
-                keyTimes.Unlock()
-            }
-        }
-    }()
+    // Initialize the keyboard channel
+    keyboardChan = make(chan types.KeyboardEvent, 100)
 
-	// Initialize keyboard channel
-	keyboardChan = make(chan types.KeyboardEvent, 100)
-
-	// Run the main functionality
-	if err := run(); err != nil {
-		log.Fatal(err)
-	}
+    // Run the main functionality
+    if err := run(ctx); err != nil {
+        log.Fatal(err)
+    }
 }
 
-func run() error {
-	// Install the keyboard hook
-	if err := installKeyboardHook(); err != nil {
-		return err
-	}
-	defer uninstallKeyboardHook()
-
-	// Capture interrupt signals (Ctrl+C)
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-    if config.DebugMode {
-        log.Println("Keyboard chatter mitigation active. Press Ctrl+C to exit.")
+func configureLogging() error {
+    if !config.DebugMode {
+        // Disable logging output by redirecting it to a dummy writer
+        log.SetOutput(io.Discard)
+        return nil
     }
-	<-signalChan // Wait for an interrupt signal
-	return nil
+
+    logFile, err := os.OpenFile("app_log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+    if err != nil {
+        return fmt.Errorf("error opening log file: %v", err)
+    }
+
+    log.SetFlags(log.Ldate | log.Ltime) // Add date and time to logs
+    log.SetOutput(logFile)             // Redirect logs to the file
+    return nil
+}
+
+func run(ctx context.Context) error {
+    // Install the keyboard hook
+    if err := installKeyboardHook(); err != nil {
+        return err
+    }
+    defer uninstallKeyboardHook()
+
+    if config.DebugMode {
+        log.Println("Keyboard chatter mitigation active.")
+    }
+
+    // Main loop, waits for context cancellation
+    <-ctx.Done()
+    if config.DebugMode {
+        log.Println("Application is terminating.")
+    }
+    return nil
+}
+
+func periodicCleanup(ctx context.Context) {
+    ticker := time.NewTicker(30 * time.Minute) // Clean every 30 minutes
+    defer ticker.Stop() // Stop the ticker when exiting the function
+
+    for {
+        select {
+        case <-ticker.C:
+            keyTimes.Lock()
+            for key, lastUpTime := range keyTimes.lastKeyUp {
+                if time.Since(lastUpTime) > 30*time.Minute { // Remove keys unused for 30 minutes
+                    delete(keyTimes.lastKeyUp, key)
+                    delete(keyTimes.lastKeyDown, key)
+                }
+            }
+            keyTimes.Unlock()
+            if config.DebugMode {
+                log.Println("Periodic cleanup executed.")
+            }
+        case <-ctx.Done(): // Exit if the context is canceled
+            if config.DebugMode {
+                log.Println("Stopping periodic cleanup.")
+            }
+            return
+        }
+    }
 }
 
 func installKeyboardHook() error {
