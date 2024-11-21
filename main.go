@@ -59,7 +59,7 @@ func main() {
 
 	// Load configuration from config.json
 	if err := loadConfig("config.json"); err != nil {
-		log.Fatalf(err)
+		log.Fatal(err)
 	}
 
 	// Start monitoring processes
@@ -90,7 +90,7 @@ func main() {
 
 	// Run the main functionality
 	if err := run(); err != nil {
-		log.Fatalf(err)
+		log.Fatal(err)
 	}
 }
 
