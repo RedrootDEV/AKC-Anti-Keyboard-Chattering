@@ -120,18 +120,31 @@ func periodicCleanup(ctx context.Context) {
     for {
         select {
         case <-ticker.C:
+            pausedMutex.Lock()
+            isPaused := paused
+            pausedMutex.Unlock()
+
+            if isPaused {
+                if config.DebugMode {
+                    log.Println("Periodic cleanup skipped due to paused state.")
+                }
+                continue
+            }
+
             keyTimes.Lock()
             for key, lastUpTime := range keyTimes.lastKeyUp {
-                if time.Since(lastUpTime) > 30*time.Minute { // Remove keys unused for 30 minutes
+                if time.Since(lastUpTime) > 30*time.Minute {
                     delete(keyTimes.lastKeyUp, key)
                     delete(keyTimes.lastKeyDown, key)
                 }
             }
             keyTimes.Unlock()
+
             if config.DebugMode {
                 log.Println("Periodic cleanup executed.")
             }
-        case <-ctx.Done(): // Exit if the context is canceled
+
+        case <-ctx.Done():
             if config.DebugMode {
                 log.Println("Stopping periodic cleanup.")
             }
