@@ -1,12 +1,14 @@
 {
-  "defaultThreshold": 50,
+  "defaultThreshold": 40,
   "debugMode": true,
   "keyThresholds": {
-    "VK_NUMPAD3": 100
+    "VK_VOLUME_UP": 0,
+    "VK_VOLUME_DOWN": 0
   },
   "pauseProcesses": [
     "Fortnite.exe",
-    "VALORANT.exe"
+    "VALORANT.exe",
+    "Warframe.x64.exe"
   ],
   "monitorInterval": 5000
 }
