@@ -1,13 +1,19 @@
 {
   "defaultThreshold": 40,
-  "debugMode": true,
+  "logSettings": {
+    "processMonitorLogs": true,
+    "cleanupLogs": true,
+    "chatterLogs": true,
+    "infoLogs": true
+  },
   "keyThresholds": {
     "VK_VOLUME_UP": 0,
-    "VK_VOLUME_DOWN": 0
+    "VK_VOLUME_DOWN": 0,
+    "VK_LSHIFT": 0
   },
   "pauseProcesses": [
-    "Fortnite.exe",
-    "VALORANT.exe",
+    "FortniteClient-Win64-Shipping.exe",
+    "VALORANT-Win64-Shipping.exe",
     "Warframe.x64.exe"
   ],
   "monitorInterval": 5000

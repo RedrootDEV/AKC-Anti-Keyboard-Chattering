@@ -3,28 +3,27 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/moutend/go-hook/pkg/keyboard"
 	"github.com/moutend/go-hook/pkg/types"
 	"github.com/moutend/go-hook/pkg/win32"
+	"golang.org/x/sys/windows"
 	"log"
 	"os"
-    "io"
-    "context"
 	"sync"
 	"time"
 	"unsafe"
-	"golang.org/x/sys/windows"
 )
 
 // Global configuration loaded from config.json
 type Config struct {
-	DefaultThreshold int               `json:"defaultThreshold"`
-	DebugMode        bool              `json:"debugMode"`
-	KeyThresholds    map[string]int    `json:"keyThresholds"`
-	PauseProcesses   []string          `json:"pauseProcesses"`
-	MonitorInterval  int               `json:"monitorInterval"`
+	DefaultThreshold int             `json:"defaultThreshold"`
+	LogSettings      map[string]bool `json:"logSettings"`
+	KeyThresholds    map[string]int  `json:"keyThresholds"`
+	PauseProcesses   []string        `json:"pauseProcesses"`
+	MonitorInterval  int             `json:"monitorInterval"`
 }
 
 var config Config
@@ -48,113 +47,94 @@ var keyboardChan chan types.KeyboardEvent
 var hookInstalled bool
 
 func main() {
-    // Create a context with cancellation
-    ctx, cancel := context.WithCancel(context.Background())
-    defer cancel() // Ensure resources are released
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-    // Load configuration from config.json (mover esto antes de configureLogging)
-    if err := loadConfig("config.json"); err != nil {
-        log.Fatal(err)
-    }
+	// Load configuration from config.json
+	if err := loadConfig("config.json"); err != nil {
+		log.Fatal(err)
+	}
 
-    // Redirect logs to a .txt file only if DebugMode is enabled
-    if err := configureLogging(); err != nil {
-        log.Fatalf("Error configuring logging: %v", err)
-    }
+	// Configure logging
+	if err := configureLogging(); err != nil {
+		log.Fatalf("Error configuring logging: %v", err)
+	}
 
-    // Start monitoring processes
-    go monitorProcesses()
+	// Start monitoring processes
+	go monitorProcesses()
 
-    // Start periodic cleanup using the context
-    go periodicCleanup(ctx)
+	// Start periodic cleanup
+	go periodicCleanup(ctx)
 
-    // Initialize the keyboard channel
-    keyboardChan = make(chan types.KeyboardEvent, 100)
+	// Initialize the keyboard channel
+	keyboardChan = make(chan types.KeyboardEvent, 100)
 
-    // Run the main functionality
-    if err := run(ctx); err != nil {
-        log.Fatal(err)
-    }
+	// Run the main functionality
+	if err := run(ctx); err != nil {
+		log.Fatal(err)
+	}
 }
 
+// Configure log output
 func configureLogging() error {
-    if !config.DebugMode {
-        // Disable logging output by redirecting it to a dummy writer
-        log.SetOutput(io.Discard)
-        return nil
-    }
-
-    logFile, err := os.OpenFile("app_log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-    if err != nil {
-        return fmt.Errorf("error opening log file: %v", err)
-    }
-
-    log.SetFlags(log.Ldate | log.Ltime) // Add date and time to logs
-    log.SetOutput(logFile)             // Redirect logs to the file
-    return nil
+	logFile, err := os.OpenFile("AKC.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return fmt.Errorf("error opening log file: %v", err)
+	}
+	log.SetFlags(log.Ldate | log.Ltime)
+	log.SetOutput(logFile)
+	return nil
 }
 
+// Run the main application
 func run(ctx context.Context) error {
-    // Install the keyboard hook
-    if err := installKeyboardHook(); err != nil {
-        return err
-    }
-    defer uninstallKeyboardHook()
+	if err := installKeyboardHook(); err != nil {
+		return err
+	}
+	defer uninstallKeyboardHook()
 
-    if config.DebugMode {
-        log.Println("Keyboard chatter mitigation active.")
-    }
-
-    // Main loop, waits for context cancellation
-    <-ctx.Done()
-    if config.DebugMode {
-        log.Println("Application is terminating.")
-    }
-    return nil
+	logInfo("Keyboard chatter mitigation active.")
+	<-ctx.Done()
+	logInfo("Application is terminating.")
+	return nil
 }
 
+// Periodic cleanup to remove stale key events
 func periodicCleanup(ctx context.Context) {
-    ticker := time.NewTicker(30 * time.Minute) // Clean every 30 minutes
-    defer ticker.Stop() // Stop the ticker when exiting the function
+	ticker := time.NewTicker(30 * time.Minute)
+	defer ticker.Stop()
 
-    for {
-        select {
-        case <-ticker.C:
-            pausedMutex.Lock()
-            isPaused := paused
-            pausedMutex.Unlock()
+	for {
+		select {
+		case <-ticker.C:
+			pausedMutex.Lock()
+			isPaused := paused
+			pausedMutex.Unlock()
 
-            if isPaused {
-                if config.DebugMode {
-                    log.Println("Periodic cleanup skipped due to paused state.")
-                }
-                continue
-            }
+			if isPaused {
+				logCleanup("Periodic cleanup skipped due to paused state.")
+				continue
+			}
 
-            keyTimes.Lock()
-            for key, lastUpTime := range keyTimes.lastKeyUp {
-                if time.Since(lastUpTime) > 30*time.Minute {
-                    delete(keyTimes.lastKeyUp, key)
-                    delete(keyTimes.lastKeyDown, key)
-                }
-            }
-            keyTimes.Unlock()
+			keyTimes.Lock()
+			for key, lastUpTime := range keyTimes.lastKeyUp {
+				if time.Since(lastUpTime) > 30*time.Minute {
+					delete(keyTimes.lastKeyUp, key)
+					delete(keyTimes.lastKeyDown, key)
+				}
+			}
+			keyTimes.Unlock()
 
-            if config.DebugMode {
-                log.Println("Periodic cleanup executed.")
-            }
-
-        case <-ctx.Done():
-            if config.DebugMode {
-                log.Println("Stopping periodic cleanup.")
-            }
-            return
-        }
-    }
+			logCleanup("Periodic cleanup executed.")
+		case <-ctx.Done():
+			logCleanup("Stopping periodic cleanup.")
+			return
+		}
+	}
 }
 
+// Install keyboard hook
 func installKeyboardHook() error {
-	// Install the keyboard hook only if it's not already installed
 	if !hookInstalled {
 		if err := keyboard.Install(handler, keyboardChan); err != nil {
 			return err
@@ -164,26 +144,22 @@ func installKeyboardHook() error {
 	return nil
 }
 
+// Uninstall keyboard hook
 func uninstallKeyboardHook() {
-	// Uninstall the keyboard hook only if it's installed
 	if hookInstalled {
 		keyboard.Uninstall()
 		hookInstalled = false
 	}
 }
 
+// Handle keyboard events
 func handler(chan<- types.KeyboardEvent) types.HOOKPROC {
 	return func(code int32, wParam, lParam uintptr) uintptr {
 		pausedMutex.Lock()
 		isPaused := paused
 		pausedMutex.Unlock()
 
-		// If the application is in pause mode, pass all events to the next hook
-		if isPaused {
-			return win32.CallNextHookEx(0, code, wParam, lParam)
-		}
-
-		if code < 0 { // Pass non-relevant events to the next hook
+		if isPaused || code < 0 {
 			return win32.CallNextHookEx(0, code, wParam, lParam)
 		}
 
@@ -200,24 +176,19 @@ func handler(chan<- types.KeyboardEvent) types.HOOKPROC {
 
 			lastUpTime, upExists := keyTimes.lastKeyUp[key.VKCode]
 			if upExists && now.Sub(lastUpTime) < threshold {
-				if config.DebugMode {
-					log.Printf("Blocked chatter for key: %v (VKCode: %d)", key.VKCode, key.VKCode)
-				}
-				return 1 // Block if it happens too quickly after a KEYUP
+				logChatter(fmt.Sprintf("Blocked chatter for key: %v (VKCode: %d)", key.VKCode, key.VKCode))
+				return 1
 			}
-			// Register the time for the valid KEYDOWN
 			keyTimes.lastKeyDown[key.VKCode] = now
 		case 257, 261: // KEYUP or SYSKEYUP
-			// Register the time for the KEYUP
 			keyTimes.lastKeyUp[key.VKCode] = now
 		}
 
-		// Pass other events to the next hook
 		return win32.CallNextHookEx(0, code, wParam, lParam)
 	}
 }
 
-// Gets the debounce time for a specific key
+// Get debounce time for a specific key
 func getThreshold(vkCode string) time.Duration {
 	if threshold, ok := config.KeyThresholds[vkCode]; ok {
 		return time.Duration(threshold) * time.Millisecond
@@ -225,7 +196,7 @@ func getThreshold(vkCode string) time.Duration {
 	return time.Duration(config.DefaultThreshold) * time.Millisecond
 }
 
-// Loads configuration from a JSON file
+// Load configuration from a JSON file
 func loadConfig(path string) error {
 	file, err := os.Open(path)
 	if err != nil {
@@ -237,62 +208,83 @@ func loadConfig(path string) error {
 	return decoder.Decode(&config)
 }
 
-// Monitors running processes and pauses the application if necessary
+// Monitor running processes and pause application if necessary
 func monitorProcesses() {
-    var lastPausedState bool
+	var lastPausedState bool
 
-    for {
-        pausedProcess, shouldPause := getActiveProcesses()
+	for {
+		pausedProcess, shouldPause := getActiveProcesses()
 
-        pausedMutex.Lock()
-        paused = shouldPause
-        pausedMutex.Unlock()
+		pausedMutex.Lock()
+		paused = shouldPause
+		pausedMutex.Unlock()
 
-        if paused && !lastPausedState {
-            if config.DebugMode {
-                log.Printf("Pausing application due to active process: %s", pausedProcess)
-            }
-            uninstallKeyboardHook()
-        } else if !paused && lastPausedState {
-            if config.DebugMode {
-                log.Println("Application running normally.")
-            }
-            installKeyboardHook()
-        }
+		if paused && !lastPausedState {
+			logProcessMonitor(fmt.Sprintf("Pausing application due to active process: %s", pausedProcess))
+			uninstallKeyboardHook()
+		} else if !paused && lastPausedState {
+			logProcessMonitor("Application running normally.")
+			installKeyboardHook()
+		}
 
-        lastPausedState = paused
-        time.Sleep(time.Duration(config.MonitorInterval) * time.Millisecond)
-    }
+		lastPausedState = paused
+		time.Sleep(time.Duration(config.MonitorInterval) * time.Millisecond)
+	}
 }
 
-// Gets a list of active processes on the system
+// Get active processes on the system
 func getActiveProcesses() (string, bool) {
-    snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
-    if err != nil {
-        log.Fatalf("Error creating snapshot of processes: %v", err)
-        return "", false
-    }
-    defer windows.CloseHandle(snapshot)
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		log.Fatalf("Error creating snapshot of processes: %v", err)
+		return "", false
+	}
+	defer windows.CloseHandle(snapshot)
 
-    var entry windows.ProcessEntry32
-    entry.Size = uint32(unsafe.Sizeof(entry))
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
 
-    if err := windows.Process32First(snapshot, &entry); err != nil {
-        log.Fatalf("Error getting first process: %v", err)
-        return "", false
-    }
+	if err := windows.Process32First(snapshot, &entry); err != nil {
+		log.Fatalf("Error getting first process: %v", err)
+		return "", false
+	}
 
-    for {
-        name := windows.UTF16ToString(entry.ExeFile[:])
-        for _, proc := range config.PauseProcesses {
-            if name == proc {
-                return name, true
-            }
-        }
-        if err := windows.Process32Next(snapshot, &entry); err != nil {
-            break
-        }
-    }
+	for {
+		name := windows.UTF16ToString(entry.ExeFile[:])
+		for _, proc := range config.PauseProcesses {
+			if name == proc {
+				return name, true
+			}
+		}
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			break
+		}
+	}
 
-    return "", false
+	return "", false
+}
+
+// Logging helpers
+func logProcessMonitor(message string) {
+	if config.LogSettings["processMonitorLogs"] {
+		log.Println("[PROCESS MONITOR]", message)
+	}
+}
+
+func logCleanup(message string) {
+	if config.LogSettings["cleanupLogs"] {
+		log.Println("[CLEANUP]", message)
+	}
+}
+
+func logChatter(message string) {
+	if config.LogSettings["chatterLogs"] {
+		log.Println("[CHATTER]", message)
+	}
+}
+
+func logInfo(message string) {
+	if config.LogSettings["infoLogs"] {
+		log.Println("[INFO]", message)
+	}
 }
