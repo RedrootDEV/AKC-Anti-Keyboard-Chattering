@@ -16,5 +16,9 @@
     "VALORANT-Win64-Shipping.exe",
     "Warframe.x64.exe"
   ],
-  "monitorInterval": 5000
+  "monitorInterval": 5000,
+  "cleanupConfig": {
+    "cleanupInterval": 1800000,
+    "keyExpirationInterval": 60000
+  }
 }

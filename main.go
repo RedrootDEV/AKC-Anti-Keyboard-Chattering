@@ -24,6 +24,10 @@ type Config struct {
 	KeyThresholds    map[string]int  `json:"keyThresholds"`
 	PauseProcesses   []string        `json:"pauseProcesses"`
 	MonitorInterval  int             `json:"monitorInterval"`
+	CleanupConfig    struct {
+		CleanupInterval      int `json:"cleanupInterval"`
+		KeyExpirationInterval int `json:"keyExpirationInterval"`
+	} `json:"cleanupConfig"`
 }
 
 var config Config
@@ -101,7 +105,10 @@ func run(ctx context.Context) error {
 
 // Periodic cleanup to remove stale key events
 func periodicCleanup(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Minute)
+	cleanupInterval := time.Duration(config.CleanupConfig.CleanupInterval) * time.Millisecond
+	keyExpirationInterval := time.Duration(config.CleanupConfig.KeyExpirationInterval) * time.Millisecond
+
+	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 
 	for {
@@ -115,20 +122,25 @@ func periodicCleanup(ctx context.Context) {
 				logCleanup("Periodic cleanup skipped due to paused state.")
 				continue
 			}
-
-			keyTimes.Lock()
-			for key, lastUpTime := range keyTimes.lastKeyUp {
-				if time.Since(lastUpTime) > 30*time.Minute {
-					delete(keyTimes.lastKeyUp, key)
-					delete(keyTimes.lastKeyDown, key)
-				}
-			}
-			keyTimes.Unlock()
+            
+			cleanOldKeys(keyExpirationInterval)
 
 			logCleanup("Periodic cleanup executed.")
 		case <-ctx.Done():
 			logCleanup("Stopping periodic cleanup.")
 			return
+		}
+	}
+}
+
+func cleanOldKeys(maxAge time.Duration) {
+	keyTimes.Lock()
+	defer keyTimes.Unlock()
+
+	for key, lastUpTime := range keyTimes.lastKeyUp {
+		if time.Since(lastUpTime) > maxAge {
+			delete(keyTimes.lastKeyUp, key)
+			delete(keyTimes.lastKeyDown, key)
 		}
 	}
 }

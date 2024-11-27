@@ -55,26 +55,45 @@ AKC uses a `config.json` file for configuration. Here's an example configuration
 
 ```json
 {
-  "defaultThreshold": 50,
-  "debugMode": true,
+  "defaultThreshold": 40,
+  "logSettings": {
+    "processMonitorLogs": true,
+    "cleanupLogs": true,
+    "chatterLogs": true,
+    "infoLogs": true
+  },
   "keyThresholds": {
-    "VK_NUMPAD3": 100
+    "VK_VOLUME_UP": 0,
+    "VK_VOLUME_DOWN": 0,
+    "VK_LSHIFT": 0
   },
   "pauseProcesses": [
-    "Fortnite.exe",
-    "VALORANT.exe"
+    "FortniteClient-Win64-Shipping.exe",
+    "VALORANT-Win64-Shipping.exe",
+    "Warframe.x64.exe"
   ],
-  "monitorInterval": 5000
+  "monitorInterval": 5000,
+  "cleanupConfig": {
+    "cleanupInterval": 1800000,
+    "keyExpirationInterval": 60000
+  }
 }
 ```
 
 ### Configuration Options
 
 - **defaultThreshold**: The default debounce threshold (in milliseconds) for all keys. If a key press occurs within this time of the previous key release, it will be blocked.
-- **debugMode**: If `true`, detailed debug information will be logged.
-- **keyThresholds**: A dictionary of custom debounce thresholds for specific keys. Use key names like `"VK_NUMPAD3"`, `"VK_A"`, etc.
+- **logSettings**: A set of flags to control the logging of different activities:
+  - `processMonitorLogs`: Enable logging for process monitoring events.
+  - `cleanupLogs`: Enable logging for cleanup operations.
+  - `chatterLogs`: Enable logging for chatter detection (when repeated key presses are blocked).
+  - `infoLogs`: Enable general information logging.
+- **keyThresholds**: A dictionary of custom debounce thresholds for specific keys. Use key names like `"VK_VOLUME_UP"`, `"VK_VOLUME_DOWN"`, `"VK_LSHIFT"`, etc. Thresholds are specified in milliseconds.
 - **pauseProcesses**: A list of processes that will trigger the application to pause if they are running. If one of the listed processes is active, the application will pause.
-- **monitorInterval**: The interval (in milliseconds) at which the application checks for running processes that may trigger the pause mode. If one of the processes listed in pauseProcesses is found to be active, the application will pause. This interval determines how frequently the check is performed.
+- **monitorInterval**: The interval (in milliseconds) at which the application checks for running processes that may trigger the pause mode. If one of the processes listed in `pauseProcesses` is found to be active, the application will pause.
+- **cleanupConfig**: Contains configuration for periodic cleanup operations:
+  - `cleanupInterval`: The interval (in milliseconds) at which periodic cleanup runs. This operation removes stale key events. For example, `1800000` ms = 30 minutes.
+  - `keyExpirationInterval`: The expiration time (in milliseconds) for key events. Any key event older than this value will be considered stale and removed. For example, `60000` ms = 1 minute.
 
 > **Note**: The **process-pause feature** is particularly useful for online games, such as **VALORANT** or **Fortnite**, where anti-cheat systems may mistakenly flag AKC as suspicious behavior. Pausing the application while these processes are running ensures that the anti-cheat systems do not interfere.
 
