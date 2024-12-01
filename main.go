@@ -97,9 +97,9 @@ func run(ctx context.Context) error {
 	}
 	defer uninstallKeyboardHook()
 
-	logInfo("Keyboard chatter mitigation active.")
+	logMessage("infoLogs", "Keyboard chatter mitigation active.")
 	<-ctx.Done()
-	logInfo("Application is terminating.")
+	logMessage("infoLogs", "Application is terminating.")
 	return nil
 }
 
@@ -119,15 +119,15 @@ func periodicCleanup(ctx context.Context) {
 			pausedMutex.Unlock()
 
 			if isPaused {
-				logCleanup("Periodic cleanup skipped due to paused state.")
+				logMessage("cleanupLogs", "Periodic cleanup skipped due to paused state.")
 				continue
 			}
             
 			cleanOldKeys(keyExpirationInterval)
 
-			logCleanup("Periodic cleanup executed.")
+			logMessage("cleanupLogs", "Periodic cleanup executed.")
 		case <-ctx.Done():
-			logCleanup("Stopping periodic cleanup.")
+			logMessage("cleanupLogs", "Stopping periodic cleanup.")
 			return
 		}
 	}
@@ -188,7 +188,7 @@ func handler(chan<- types.KeyboardEvent) types.HOOKPROC {
 
 			lastUpTime, upExists := keyTimes.lastKeyUp[key.VKCode]
 			if upExists && now.Sub(lastUpTime) < threshold {
-				logChatter(fmt.Sprintf("Blocked chatter for key: %v (VKCode: %d)", key.VKCode, key.VKCode))
+				logMessage("chatterLogs", fmt.Sprintf("Blocked chatter for key: %v (VKCode: %d)", key.VKCode, key.VKCode))
 				return 1
 			}
 			keyTimes.lastKeyDown[key.VKCode] = now
@@ -232,10 +232,10 @@ func monitorProcesses() {
 		pausedMutex.Unlock()
 
 		if paused && !lastPausedState {
-			logProcessMonitor(fmt.Sprintf("Pausing application due to active process: %s", pausedProcess))
+			logMessage("processMonitorLogs", fmt.Sprintf("Pausing application due to active process: %s", pausedProcess))
 			uninstallKeyboardHook()
 		} else if !paused && lastPausedState {
-			logProcessMonitor("Application running normally.")
+			logMessage("processMonitorLogs", "Application running normally.")
 			installKeyboardHook()
 		}
 
@@ -276,27 +276,16 @@ func getActiveProcesses() (string, bool) {
 	return "", false
 }
 
-// Logging helpers
-func logProcessMonitor(message string) {
-	if config.LogSettings["processMonitorLogs"] {
-		log.Println("[PROCESS MONITOR]", message)
-	}
+// Logging handler
+var logLabels = map[string]string{
+	"processMonitorLogs": "PROCESS MONITOR",
+	"cleanupLogs":        "CLEANUP",
+	"chatterLogs":        "CHATTER",
+	"infoLogs":           "INFO",
 }
 
-func logCleanup(message string) {
-	if config.LogSettings["cleanupLogs"] {
-		log.Println("[CLEANUP]", message)
-	}
-}
-
-func logChatter(message string) {
-	if config.LogSettings["chatterLogs"] {
-		log.Println("[CHATTER]", message)
-	}
-}
-
-func logInfo(message string) {
-	if config.LogSettings["infoLogs"] {
-		log.Println("[INFO]", message)
+func logMessage(logType, message string) {
+	if config.LogSettings[logType] {
+		log.Printf("[%s] %s", logLabels[logType], message)
 	}
 }
