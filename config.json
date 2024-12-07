@@ -14,7 +14,8 @@
   "pauseProcesses": [
     "FortniteClient-Win64-Shipping.exe",
     "VALORANT-Win64-Shipping.exe",
-    "Warframe.x64.exe"
+    "Warframe.x64.exe",
+    "Marvel-Win64-Shipping.exe"
   ],
   "monitorInterval": 5000,
   "cleanupConfig": {
