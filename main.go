@@ -222,24 +222,27 @@ func loadConfig(path string) error {
 
 // Monitor running processes and pause application if necessary
 func monitorProcesses() {
-	var lastPausedState bool
+	var previousPausedState bool
 
 	for {
 		pausedProcess, shouldPause := getActiveProcesses()
 
-		pausedMutex.Lock()
-		paused = shouldPause
-		pausedMutex.Unlock()
+		if shouldPause != previousPausedState {
+			pausedMutex.Lock()
+			paused = shouldPause
+			pausedMutex.Unlock()
 
-		if paused && !lastPausedState {
-			logMessage("processMonitorLogs", fmt.Sprintf("Pausing application due to active process: %s", pausedProcess))
-			uninstallKeyboardHook()
-		} else if !paused && lastPausedState {
-			logMessage("processMonitorLogs", "Application running normally.")
-			installKeyboardHook()
+			if shouldPause {
+				logMessage("processMonitorLogs", fmt.Sprintf("Pausing application due to active process: %s", pausedProcess))
+				uninstallKeyboardHook()
+			} else {
+				logMessage("processMonitorLogs", "Resuming application.")
+				installKeyboardHook()
+			}
+
+			previousPausedState = shouldPause
 		}
 
-		lastPausedState = paused
 		time.Sleep(time.Duration(config.MonitorInterval) * time.Millisecond)
 	}
 }
