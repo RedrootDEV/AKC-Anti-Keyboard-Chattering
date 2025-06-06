@@ -1,10 +1,10 @@
 {
   "defaultThreshold": 40,
   "logSettings": {
-    "processMonitorLogs": true,
-    "cleanupLogs": true,
-    "chatterLogs": true,
-    "infoLogs": true
+    "processMonitorLogs": false,
+    "cleanupLogs": false,
+    "chatterLogs": false,
+    "infoLogs": false
   },
   "keyThresholds": {
     "VK_VOLUME_UP": 0,
@@ -12,12 +12,13 @@
     "VK_LSHIFT": 0
   },
   "pauseProcesses": [
-    "FortniteClient-Win64-Shipping.exe",
-    "VALORANT-Win64-Shipping.exe",
-    "Warframe.x64.exe",
-    "Marvel-Win64-Shipping.exe"
+    { "name": "FortniteClient-Win64-Shipping.exe", "mode": "hard" },
+    { "name": "VALORANT-Win64-Shipping.exe", "mode": "hard" },
+    { "name": "Warframe.x64.exe", "mode": "soft" },
+    { "name": "Marvel-Win64-Shipping.exe", "mode": "soft" }
   ],
-  "monitorInterval": 5000,
+  "hardPauseMonitorInterval": 5000,
+  "softPauseMonitorInterval": 250,
   "cleanupConfig": {
     "cleanupInterval": 1800000,
     "keyExpirationInterval": 60000

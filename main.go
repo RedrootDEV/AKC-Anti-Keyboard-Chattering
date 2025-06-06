@@ -12,29 +12,44 @@ import (
 	"golang.org/x/sys/windows"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
+	"syscall"
 	"unsafe"
 )
 
+// Process configuration structure
+type ProcessConfig struct {
+	Name string `json:"name"`
+	Mode string `json:"mode"` // "hard" or "soft"
+}
+
 // Global configuration loaded from config.json
 type Config struct {
-	DefaultThreshold int             `json:"defaultThreshold"`
-	LogSettings      map[string]bool `json:"logSettings"`
-	KeyThresholds    map[string]int  `json:"keyThresholds"`
-	PauseProcesses   []string        `json:"pauseProcesses"`
-	MonitorInterval  int             `json:"monitorInterval"`
+	DefaultThreshold int                      `json:"defaultThreshold"`
+	LogSettings      map[string]bool          `json:"logSettings"`
+	KeyThresholds    map[string]int           `json:"keyThresholds"`
+	PauseProcesses   []ProcessConfig          `json:"pauseProcesses"`
+	HardPauseMonitorInterval int              `json:"hardPauseMonitorInterval"`
+	SoftPauseMonitorInterval int              `json:"softPauseMonitorInterval"`
 	CleanupConfig    struct {
-		CleanupInterval      int `json:"cleanupInterval"`
+		CleanupInterval       int `json:"cleanupInterval"`
 		KeyExpirationInterval int `json:"keyExpirationInterval"`
 	} `json:"cleanupConfig"`
 }
 
 var config Config
 
-// Global state for the "pause" mode
-var paused = false
-var pausedMutex sync.Mutex
+// Global state for different pause modes
+var pauseState = struct {
+	sync.RWMutex
+	hardPaused bool
+	softPaused bool
+}{
+	hardPaused: false,
+	softPaused: false,
+}
 
 // Structure to handle key timings
 var keyTimes = struct {
@@ -49,6 +64,14 @@ var keyTimes = struct {
 // Global keyboard channel and hook
 var keyboardChan chan types.KeyboardEvent
 var hookInstalled bool
+var hookMutex sync.Mutex
+
+// Windows API functions for foreground window detection
+var (
+	user32 = windows.NewLazySystemDLL("user32.dll")
+	procGetForegroundWindow = user32.NewProc("GetForegroundWindow")
+	procGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
+)
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -65,7 +88,8 @@ func main() {
 	}
 
 	// Start monitoring processes
-	go monitorProcesses()
+    go monitorHardPause(config.HardPauseMonitorInterval)
+    go monitorSoftPause(config.SoftPauseMonitorInterval)
 
 	// Start periodic cleanup
 	go periodicCleanup(ctx)
@@ -114,17 +138,16 @@ func periodicCleanup(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			pausedMutex.Lock()
-			isPaused := paused
-			pausedMutex.Unlock()
+			pauseState.RLock()
+			isPaused := pauseState.hardPaused
+			pauseState.RUnlock()
 
 			if isPaused {
-				logMessage("cleanupLogs", "Periodic cleanup skipped due to paused state.")
+				logMessage("cleanupLogs", "Periodic cleanup skipped due to hard paused state.")
 				continue
 			}
-            
-			cleanOldKeys(keyExpirationInterval)
 
+			cleanOldKeys(keyExpirationInterval)
 			logMessage("cleanupLogs", "Periodic cleanup executed.")
 		case <-ctx.Done():
 			logMessage("cleanupLogs", "Stopping periodic cleanup.")
@@ -145,33 +168,48 @@ func cleanOldKeys(maxAge time.Duration) {
 	}
 }
 
-// Install keyboard hook
+// Install keyboard hook with thread safety
 func installKeyboardHook() error {
+	hookMutex.Lock()
+	defer hookMutex.Unlock()
+
 	if !hookInstalled {
 		if err := keyboard.Install(handler, keyboardChan); err != nil {
 			return err
 		}
 		hookInstalled = true
+		logMessage("infoLogs", "Keyboard hook installed.")
 	}
 	return nil
 }
 
-// Uninstall keyboard hook
+// Uninstall keyboard hook with thread safety
 func uninstallKeyboardHook() {
+	hookMutex.Lock()
+	defer hookMutex.Unlock()
+
 	if hookInstalled {
 		keyboard.Uninstall()
 		hookInstalled = false
+		logMessage("infoLogs", "Keyboard hook uninstalled.")
 	}
 }
 
 // Handle keyboard events
 func handler(chan<- types.KeyboardEvent) types.HOOKPROC {
 	return func(code int32, wParam, lParam uintptr) uintptr {
-		pausedMutex.Lock()
-		isPaused := paused
-		pausedMutex.Unlock()
+		pauseState.RLock()
+		isHardPaused := pauseState.hardPaused
+		isSoftPaused := pauseState.softPaused
+		pauseState.RUnlock()
 
-		if isPaused || code < 0 {
+		// If hard paused or system hook, pass through
+		if isHardPaused || code < 0 {
+			return win32.CallNextHookEx(0, code, wParam, lParam)
+		}
+
+		// If soft paused, pass through but don't log chatter
+		if isSoftPaused {
 			return win32.CallNextHookEx(0, code, wParam, lParam)
 		}
 
@@ -220,38 +258,113 @@ func loadConfig(path string) error {
 	return decoder.Decode(&config)
 }
 
-// Monitor running processes and pause application if necessary
-func monitorProcesses() {
-	var previousPausedState bool
+// Get the process ID of the foreground window
+func getForegroundProcessID() (uint32, error) {
+	hwnd, _, _ := procGetForegroundWindow.Call()
+	if hwnd == 0 {
+		return 0, fmt.Errorf("no foreground window")
+	}
+
+	var processID uint32
+	_, _, _ = procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&processID)))
+	
+	if processID == 0 {
+		return 0, fmt.Errorf("could not get process ID")
+	}
+
+	return processID, nil
+}
+
+// Get process name by process ID
+func getProcessNameByPID(pid uint32) (string, error) {
+    handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+    if err != nil {
+        return "", err
+    }
+    defer windows.CloseHandle(handle)
+
+    psapi := syscall.NewLazyDLL("psapi.dll")
+    getModuleBaseNameW := psapi.NewProc("GetModuleBaseNameW")
+
+    exeName := make([]uint16, windows.MAX_PATH)
+    r1, _, err := getModuleBaseNameW.Call(
+        uintptr(handle),
+        0,
+        uintptr(unsafe.Pointer(&exeName[0])),
+        uintptr(len(exeName)),
+    )
+    if r1 == 0 {
+        return "", err
+    }
+    return syscall.UTF16ToString(exeName), nil
+}
+
+// Monitor running processes and manage pause states
+func monitorHardPause(interval int) {
+	var previousHardPausedState bool
 
 	for {
-		pausedProcess, shouldPause := getActiveProcesses()
+		hardPauseProcess, shouldHardPause := checkHardPauseProcesses()
 
-		if shouldPause != previousPausedState {
-			pausedMutex.Lock()
-			paused = shouldPause
-			pausedMutex.Unlock()
+		if shouldHardPause != previousHardPausedState {
+			pauseState.Lock()
+			pauseState.hardPaused = shouldHardPause
+			pauseState.Unlock()
 
-			if shouldPause {
-				logMessage("processMonitorLogs", fmt.Sprintf("Pausing application due to active process: %s", pausedProcess))
+			if shouldHardPause {
+				logMessage("processMonitorLogs", fmt.Sprintf("Hard pausing application due to active process: %s", hardPauseProcess))
 				uninstallKeyboardHook()
 			} else {
-				logMessage("processMonitorLogs", "Resuming application.")
+				logMessage("processMonitorLogs", "Resuming from hard pause.")
 				installKeyboardHook()
 			}
-
-			previousPausedState = shouldPause
+			previousHardPausedState = shouldHardPause
 		}
 
-		time.Sleep(time.Duration(config.MonitorInterval) * time.Millisecond)
+		time.Sleep(time.Duration(interval) * time.Millisecond)
 	}
 }
 
-// Get active processes on the system
-func getActiveProcesses() (string, bool) {
+func monitorSoftPause(interval int) {
+	var previousSoftPausedState bool
+	var previousActiveProcess string
+
+	for {
+		softPauseProcess, shouldSoftPause := checkSoftPauseProcess()
+
+		// Solo cambiar soft pause si no está en hard pause
+		pauseState.RLock()
+		isHardPaused := pauseState.hardPaused
+		pauseState.RUnlock()
+		if isHardPaused {
+			time.Sleep(time.Duration(interval) * time.Millisecond)
+			continue
+		}
+
+		if shouldSoftPause != previousSoftPausedState || softPauseProcess != previousActiveProcess {
+			pauseState.Lock()
+			pauseState.softPaused = shouldSoftPause
+			pauseState.Unlock()
+
+			if shouldSoftPause && softPauseProcess != previousActiveProcess {
+				logMessage("processMonitorLogs", fmt.Sprintf("Soft pausing due to foreground process: %s", softPauseProcess))
+			} else if !shouldSoftPause && previousSoftPausedState {
+				logMessage("processMonitorLogs", "Resuming from soft pause.")
+			}
+
+			previousSoftPausedState = shouldSoftPause
+			previousActiveProcess = softPauseProcess
+		}
+
+		time.Sleep(time.Duration(interval) * time.Millisecond)
+	}
+}
+
+// Check for hard pause processes (running in background)
+func checkHardPauseProcesses() (string, bool) {
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		log.Fatalf("Error creating snapshot of processes: %v", err)
+		logMessage("processMonitorLogs", fmt.Sprintf("Error creating snapshot: %v", err))
 		return "", false
 	}
 	defer windows.CloseHandle(snapshot)
@@ -260,19 +373,40 @@ func getActiveProcesses() (string, bool) {
 	entry.Size = uint32(unsafe.Sizeof(entry))
 
 	if err := windows.Process32First(snapshot, &entry); err != nil {
-		log.Fatalf("Error getting first process: %v", err)
+		logMessage("processMonitorLogs", fmt.Sprintf("Error getting first process: %v", err))
 		return "", false
 	}
 
 	for {
 		name := windows.UTF16ToString(entry.ExeFile[:])
-		for _, proc := range config.PauseProcesses {
-			if name == proc {
+		for _, procConfig := range config.PauseProcesses {
+			if strings.EqualFold(name, procConfig.Name) && procConfig.Mode == "hard" {
 				return name, true
 			}
 		}
 		if err := windows.Process32Next(snapshot, &entry); err != nil {
 			break
+		}
+	}
+
+	return "", false
+}
+
+// Check for soft pause process (foreground window)
+func checkSoftPauseProcess() (string, bool) {
+	foregroundPID, err := getForegroundProcessID()
+	if err != nil {
+		return "", false
+	}
+
+	processName, err := getProcessNameByPID(foregroundPID)
+	if err != nil {
+		return "", false
+	}
+
+	for _, procConfig := range config.PauseProcesses {
+		if strings.EqualFold(processName, procConfig.Name) && procConfig.Mode == "soft" {
+			return processName, true
 		}
 	}
 

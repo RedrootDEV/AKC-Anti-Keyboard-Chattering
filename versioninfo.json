@@ -2,14 +2,14 @@
     "FixedFileInfo": {
         "FileVersion": {
             "Major": 1,
-            "Minor": 2,
-            "Patch": 0,
+            "Minor": 3,
+            "Patch": 1,
             "Build": 0
         },
         "ProductVersion": {
             "Major": 1,
-            "Minor": 2,
-            "Patch": 0,
+            "Minor": 3,
+            "Patch": 1,
             "Build": 0
         },
         "FileFlagsMask": "3f",
@@ -22,14 +22,14 @@
         "Comments": "Anti Keyboard Chattering - An open-source tool to mitigate unintended key presses.",
         "CompanyName": "RedrootDEV (https://github.com/RedrootDEV)",
         "FileDescription": "AKC - Anti Keyboard Chattering",
-        "FileVersion": "1.2.0.0",
+        "FileVersion": "1.3.1.0",
         "InternalName": "AKC",
-        "LegalCopyright": "© 2024 RedrootDEV. Licensed under the MIT License.",
+        "LegalCopyright": "© 2025 RedrootDEV. Licensed under the MIT License.",
         "LegalTrademarks": "Documentation and license available at https://github.com/RedrootDEV/AKC-Anti-Keyboard-Chattering",
         "OriginalFilename": "AKC.exe",
         "PrivateBuild": "This is a public release. Contributions welcome at GitHub.",
         "ProductName": "AKC - Anti Keyboard Chattering",
-        "ProductVersion": "1.2.0.0",
+        "ProductVersion": "1.3.1.0",
         "SpecialBuild": "Standard build without additional modifications."
     },
     "VarFileInfo": {
