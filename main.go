@@ -45,10 +45,8 @@ var config Config
 var pauseState = struct {
 	sync.RWMutex
 	hardPaused bool
-	softPaused bool
 }{
 	hardPaused: false,
-	softPaused: false,
 }
 
 // Structure to handle key timings
@@ -200,16 +198,10 @@ func handler(chan<- types.KeyboardEvent) types.HOOKPROC {
 	return func(code int32, wParam, lParam uintptr) uintptr {
 		pauseState.RLock()
 		isHardPaused := pauseState.hardPaused
-		isSoftPaused := pauseState.softPaused
 		pauseState.RUnlock()
 
 		// If hard paused or system hook, pass through
 		if isHardPaused || code < 0 {
-			return win32.CallNextHookEx(0, code, wParam, lParam)
-		}
-
-		// If soft paused, pass through but don't log chatter
-		if isSoftPaused {
 			return win32.CallNextHookEx(0, code, wParam, lParam)
 		}
 
@@ -332,7 +324,6 @@ func monitorSoftPause(interval int) {
 	for {
 		softPauseProcess, shouldSoftPause := checkSoftPauseProcess()
 
-		// Solo cambiar soft pause si no está en hard pause
 		pauseState.RLock()
 		isHardPaused := pauseState.hardPaused
 		pauseState.RUnlock()
@@ -343,13 +334,14 @@ func monitorSoftPause(interval int) {
 
 		if shouldSoftPause != previousSoftPausedState || softPauseProcess != previousActiveProcess {
 			pauseState.Lock()
-			pauseState.softPaused = shouldSoftPause
 			pauseState.Unlock()
 
-			if shouldSoftPause && softPauseProcess != previousActiveProcess {
-				logMessage("processMonitorLogs", fmt.Sprintf("Soft pausing due to foreground process: %s", softPauseProcess))
-			} else if !shouldSoftPause && previousSoftPausedState {
-				logMessage("processMonitorLogs", "Resuming from soft pause.")
+			if shouldSoftPause {
+				logMessage("processMonitorLogs", fmt.Sprintf("Soft pausing (uninstall hook) due to foreground process: %s", softPauseProcess))
+				uninstallKeyboardHook()
+			} else if previousSoftPausedState {
+				logMessage("processMonitorLogs", "Resuming from soft pause (install hook).")
+				installKeyboardHook()
 			}
 
 			previousSoftPausedState = shouldSoftPause
